@@ -17,11 +17,12 @@ void ACLK_init();
 void sendDataToProcessing(char symbol,int dat);
 void delay(unsigned int n);
 void UART_send(char dat);
+char inputchar(unsigned char dat);
 
 unsigned char PulsePin=0;
 int fadeRate=0;
 
-volatile unsigned int IBI=600;                //心率间期 
+volatile unsigned int IBI=600;                //心率间期
 volatile unsigned int BPM;                     //心率值
 volatile unsigned int Signal;                  //存放心率原始数据
 volatile int Pulse=false;                     //心率曲线低时为false
@@ -35,7 +36,7 @@ volatile int Thresh=512;
 volatile int amp=100;                         //心率曲线振幅
 volatile int firstBeat=true;
 volatile int secondBeat=false;
-static unsigned char order=0;
+// static unsigned char order=0;
 
 
 void ACLK_init(void){                           //初始化默认定时器,ACLK,XT1
@@ -56,11 +57,11 @@ void ACLK_init(void){                           //初始化默认定时器,ACLK,
                                             // Clear XT2,XT1,DCO fault flags
    	 SFRIFG1 &= ~OFIFG;                      // Clear fault flags
  	 }while (SFRIFG1&OFIFG);                   // Test oscillator fault flag
-  
+
  	 UCSCTL6 &= ~(XT1DRIVE_3);                 // Xtal is now stable, reduce drive strength
 
  	 UCSCTL4 |= SELA_0;                        // ACLK = LFTX1 (by default)
-}	
+}
 
 void UART_init(void){                            //UART初始化
 
@@ -100,30 +101,30 @@ void main(void){
 	_EINT();                               //打开总中断
 
 	while(1){
-		sendDataToProcessing('S',Signal);
+//		sendDataToProcessing('S',Signal);
 		if(UCA0RXBUF==4){
-			sendDataToprocessing(Signal);  //发送原始心率数据电压
+			sendDataToProcessing('S',Signal);  //发送原始心率数据电压
 		if(QS==true){
 			fadeRate=255;
-		sendDataToProcessing('B',BPM);             //发送心率值		
-		sendDataToProcessing('Q',IBI);             //发送心率值		
+		sendDataToProcessing('B',BPM);             //发送心率值
+		sendDataToProcessing('Q',IBI);             //发送心率值
 		QS=false;
 		}
-	}	
+	}
 		__delay_cycles(138);                  // Delay
-	}	
+	}
 }
 
 void sendDataToProcessing(char symbol,int dat)
 {
-	putchar(symbol);
+	inputchar(symbol);
 printf("%d\r\n",dat);
 }
 
-char putchar(unsigned char dat)
+char inputchar(unsigned char dat)
 {
 	UCA0TXBUF=dat;                  //TODO 中断请求停止位清零
-	return UCAOTXBUF;
+	return UCA0TXBUF;
 }
 
 unsigned int analogRead(unsigned char channel){
@@ -136,6 +137,7 @@ unsigned int analogRead(unsigned char channel){
        	//TODO
   	ADC12CTL0 |= ADC12ENC;                    // Enable conversions
   	ADC12CTL0 |= ADC12SC;                     // Start conversion
+  	return result;
 }
 
 #pragma vector=ADC12_VECTOR
@@ -161,8 +163,8 @@ __interrupt void timer(void)
 
 	}
 
-	if(N>250){
-		if((Signal>Thresh)&&(Pulse==false)&&(N>(IBI/5)*3)){
+	if(n>250){
+		if((Signal>Thresh)&&(Pulse==false)&&(n>(IBI/5)*3)){
 			Pulse=true;
 			IBI=sampleCounter-lastBeatTime;
 			lastBeatTime=sampleCounter;
@@ -211,7 +213,7 @@ __interrupt void timer(void)
 
 	}
 
-	if(N>2500){                               //如果2s没有心跳
+	if(n>2500){                               //如果2s没有心跳
 		Thresh=512;
 		Peak=512;
 		Trough=512;
@@ -220,4 +222,4 @@ __interrupt void timer(void)
 		secondBeat=false;
 }
 	_EINT();
-	}
+}
