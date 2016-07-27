@@ -2,6 +2,11 @@
  *
  * 心电监测代码
  *
+ * MCU:MSP430F5529
+ * Baudrate：9600
+ * ADC PIN：P6.0
+ * UART：P3.3  P3.4
+ *
  ***************************************************************/
 
 #include<msp430f5529.h>
@@ -9,13 +14,13 @@
 
 #define false 0
 #define true 1
-#define BAUD 9600                               //邦特率为9600
+
 
 void UART_init(void);
-void ADC_init(unsigned char channel);
+void ADC_init();
 void ACLK_init();
 void sendDataToProcessing(char symbol,int dat);
-void delay(unsigned int n);
+
 void UART_send(char dat);
 char inputchar(unsigned char dat);
 
@@ -65,7 +70,7 @@ void ACLK_init(void){                           //初始化默认定时器,ACLK,
 
 void UART_init(void){                            //UART初始化
 
-	P3SEL=BIT3+BIT4;                         // P3.4,5 = USCI_A0 TXD/RXD
+	P3SEL=BIT3+BIT4;                         // P3.3,4 = USCI_A0 TXD/RXD
 
 	UCA0CTL1 |= UCSWRST;                      // **Put state machine
 	UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
@@ -78,7 +83,7 @@ void UART_init(void){                            //UART初始化
 	}
 
 
- void ADC_init(unsigned char channel){
+ void ADC_init(){
  	P6SEL |= 0x01;                            // Enable A/D channel A0
 	ADC12CTL0 = ADC12ON+ADC12SHT0_8+ADC12MSC; // Turn on ADC12, set sampling time
 	ADC12CTL1 = ADC12SHP+ADC12CONSEQ_2;       // Use sampling timer, set mode
@@ -91,15 +96,16 @@ void sys_init(){
 
 	WDTCTL=WDTPW+WDTHOLD;                    //关闭看门狗
 	UART_init();
-	ADC_init(PulsePin);
+	ADC_init();
 	ACLK_init();
 }
 
 void main(void){
 	sys_init();                             //初始化
-	LPM3;                                   //进入低功耗模式3
+	//LPM3;                                   //进入低功耗模式3
 	_EINT();                               //打开总中断
 
+	/*
 	while(1){
 //		sendDataToProcessing('S',Signal);
 		if(UCA0RXBUF==4){
@@ -113,31 +119,51 @@ void main(void){
 	}
 		__delay_cycles(138);                  // Delay
 	}
+	*/
+	while(1){;}
+//	UCA0TXBUF=UCA0RXBUF;
+
 }
+
+#pragma vector=USCI_A0_VECTOR
+__interrupt void USCI_A0_RX(void){            //UART中断
+
+	switch(__even_in_range(UCA0IV,4)){
+	case 0:break;
+	case 2:
+
+	while(!(UCA0IFG&UCTXIFG));
+	UCA0TXBUF=UCA0RXBUF;
+	break;
+	case 4:break;
+	default:break;
+	}
+}
+
 
 void sendDataToProcessing(char symbol,int dat)
 {
 	inputchar(symbol);
-printf("%d\r\n",dat);
+printf("%x\n",dat);
 }
 
-char inputchar(unsigned char dat)
+char inputchar(unsigned char )
 {
 	UCA0TXBUF=dat;                  //TODO 中断请求停止位清零
 	return UCA0TXBUF;
 }
 
-unsigned int analogRead(unsigned char channel){
-	unsigned int result;
+unsigned int analogRead(){
+	unsigned int result1=0;
         ADC12MCTL0 &=!ADC12IFG;
-	result+=ADC12MEM0;
-	result=result<<8;
+	result1+=ADC12MEM0;
+	result1=result1<<8;
 
 	ADC12CTL0 = ADC12ON+ADC12SHT0_8+ADC12MSC; // Turn on ADC12, set sampling time
        	//TODO
   	ADC12CTL0 |= ADC12ENC;                    // Enable conversions
   	ADC12CTL0 |= ADC12SC;                     // Start conversion
-  	return result;
+  	return result1;
 }
 
 #pragma vector=ADC12_VECTOR
@@ -148,7 +174,7 @@ __interrupt void timer(void)
 	unsigned int runningTotal=0;        //保存前10个心率间期的值，并清0
 	__bic_SR_register(GIE);            //关闭总中断
 	                                   //TODO 重载定时器
-	Signal=analogRead(PulsePin);        //读取心率值
+	Signal=analogRead();        //读取心率值
 	sampleCounter+=2;                    //计时总时间
 	n=sampleCounter-lastBeatTime;
 
