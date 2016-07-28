@@ -117,7 +117,7 @@ void main(void){
 	//LPM3;                                   //进入低功耗模式3
 	_EINT();                               //打开总中断
 
-	/*
+	
 	while(1){
 //		sendDataToProcessing('S',Signal);
 		if(UCA0RXBUF==4){
@@ -131,8 +131,8 @@ void main(void){
 	}
 		__delay_cycles(138);                  // Delay
 	}
-	*/
-	while(1){;}
+	
+//	while(1){;}
 //	UCA0TXBUF=UCA0RXBUF;
 
 }
@@ -159,7 +159,7 @@ void sendDataToProcessing(char symbol,int dat)
 printf("%x\n",dat);
 }
 
-char inputchar(unsigned char )
+char inputchar(unsigned char dat)
 {
 	UCA0TXBUF=dat;                  //TODO 中断请求停止位清零
 	return UCA0TXBUF;
@@ -167,7 +167,7 @@ char inputchar(unsigned char )
 
 unsigned int analogRead(){
 	unsigned int result1=0;
-        ADC12MCTL0 &=!ADC12IFG;
+ //       ADC12MCTL0 &=!ADC12IFG;
 	result1+=ADC12MEM0;
 	result1=result1<<8;
 
