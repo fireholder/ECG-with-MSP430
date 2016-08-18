@@ -26,18 +26,23 @@
 
 #define false 0
 #define true 1
+#define CPUCLK  			8000000		// 8MHZ       ---一个周期0.125us
+#define	 delay_us(us)		__delay_cycles((long)(CPUCLK*(double)us/1000000.0))
+#define delay_ms(ms)	__delay_cycles((long)(CPUCLK*(double)ms/1000.0))
 
 
 void UART_init(void);
 void ADC_init();
-void ACLK_init();
-void sendDataToProcessing(char symbol,int dat);
-
-void UART_send(char dat);
+void timer_init();
+void sendData(char symbol,int dat);
+void UARTSendString(unsigned char *str);
+void UARTSendByte(unsigned char data);
 char inputchar(unsigned char dat);
-
+int calculate();
 unsigned char PulsePin=0;
 int fadeRate=0;
+
+unsigned char txBuff[4];
 
 volatile unsigned int IBI=600;                //心率间期
 volatile unsigned int BPM;                     //心率值
@@ -56,15 +61,11 @@ volatile int secondBeat=false;
 // static unsigned char order=0;
 
 
-void ACLK_init(void){                           //初始化默认定时器,ACLK,XT1
+void timer_init(void){                           //初始化默认定时器,ACLK,XT1
 
-//	WDTCTL=EDTPW+WDTHOLD;                    //关闭看门狗
-//	P1DIR |=BIT1;                            //P1.1 output
-
+/*
 	P1DIR |=BIT0;                           //ACLK
 	P1SEL |=BIT0;
-//	P2SIR |=BIT2;
-//	P2SEL= |BIT2;
 	P5SEL |=BIT4+BIT5;                      //选择XT1
 
 	UCSCTL6 &=~(XT1OFF);                    //打开XT1
@@ -78,6 +79,23 @@ void ACLK_init(void){                           //初始化默认定时器,ACLK,
  	 UCSCTL6 &= ~(XT1DRIVE_3);                 // Xtal is now stable, reduce drive strength
 
  	 UCSCTL4 |= SELA_0;                        // ACLK = LFTX1 (by default)
+*/
+ 	 USCTL3 = SELREF_2;                       // Set DCO FLL reference = REFO
+       	 UCSCTL4 |= SELA_2;                        // Set ACLK = REFO
+ 	 __bis_SR_register(SCG0);                  // Disable the FLL control loop
+	 UCSCTL0 = 0x0000;                         // Set lowest possible DCOx, MODx
+	 UCSCTL1 = DCORSEL_7;                      // Select DCO range 50MHz operation
+	 UCSCTL2 = FLLD_0 + 487;                   // Set DCO Multiplier for 25MHz
+	 __bic_SR_register(SCG0);                 //enable the FLL control loop
+	 __delay_cycles(782000);                  // Loop until XT1,XT2 & DCO stabilizes - In this case only DCO has to stabilize
+
+	do{
+		UCSCTL7 &= ~(XT2OFFG + XT1LFOFFG + DCOFFG);
+				                                            // Clear XT2,XT1,DCO fault flags
+		SFRIFG1 &= ~OFIFG;                      // Clear fault flags
+	}while (SFRIFG1&OFIFG);                   // Test oscillator fault flag
+    // USART-0 , 9600
+
 }
 
 void UART_init(void){                            //UART初始化
@@ -97,8 +115,10 @@ void UART_init(void){                            //UART初始化
 
  void ADC_init(){
  	P6SEL |= 0x01;                            // Enable A/D channel A0
-	ADC12CTL0 = ADC12ON+ADC12SHT0_8+ADC12MSC; // Turn on ADC12, set sampling time
-	ADC12CTL1 = ADC12SHP+ADC12CONSEQ_2;       // Use sampling timer, set mode
+//	ADC12CTL0 = ADC12ON+ADC12SHT0_8+ADC12MSC; // Turn on ADC12, set sampling time
+	ADC12CTL0 =ADC12ON +ADC12SHT02;
+//	ADC12CTL1 = ADC12SHP+ADC12CONSEQ_2;       // Use sampling timer, set mode
+	ADC12CTL1=ADC12SHP+ADC12CONSEQ_0;
 	ADC12IE = 0x01;                           // Enable ADC12IFG.0
   	ADC12CTL0 |= ADC12ENC;                    // Enable conversions
   	ADC12CTL0 |= ADC12SC;                     // Start conversion
@@ -107,27 +127,28 @@ void UART_init(void){                            //UART初始化
 void sys_init(){
 
 	WDTCTL=WDTPW+WDTHOLD;                    //关闭看门狗
+	timer_init();
+	__delay_cycles(782000);
 	UART_init();
 	ADC_init();
-	ACLK_init();
 }
 
 void main(void){
 	sys_init();                             //初始化
 	//LPM3;                                   //进入低功耗模式3
-	_EINT();                               //打开总中断
-
+//	_EINT();                               //打开总中断
+	
+	TA0CTL = TACLR + TAIE;			 				//开启中断并清零
+	TA0CTL = TASSEL__ACLK + MC__UP +  TACLR;	//选择SCLK32.768KHZ作为时钟，选用连续模式，并开启中断
+	//中断频率100HZ
+	TA0CCTL0 = CCIE;                         			 // CCR0 interrupt enabled
+	TA0CCR0 = 327;
+	__enable_interrupt();
 	
 	while(1){
-//		sendDataToProcessing('S',Signal);
-		if(UCA0RXBUF==4){
-			sendDataToProcessing('S',Signal);  //发送原始心率数据电压
-		if(QS==true){
-			fadeRate=255;
-		sendDataToProcessing('B',BPM);             //发送心率值
-		sendDataToProcessing('Q',IBI);             //发送心率值
-		QS=false;
+		;
 		}
+
 	}
 		__delay_cycles(138);                  // Delay
 	}
@@ -144,8 +165,8 @@ __interrupt void USCI_A0_RX(void){            //UART中断
 	case 0:break;
 	case 2:
 
-	while(!(UCA0IFG&UCTXIFG));
-	UCA0TXBUF=UCA0RXBUF;
+//	while(!(UCA0IFG&UCTXIFG));
+//	UCA0TXBUF=UCA0RXBUF;
 	break;
 	case 4:break;
 	default:break;
@@ -153,40 +174,74 @@ __interrupt void USCI_A0_RX(void){            //UART中断
 }
 
 
-void sendDataToProcessing(char symbol,int dat)
+void sendData(char symbol,int dat)
 {
 	inputchar(symbol);
-printf("%x\n",dat);
+	printf("%x\n",dat);
 }
 
-char inputchar(unsigned char dat)
+char inputchar(unsigned char data)
 {
-	UCA0TXBUF=dat;                  //TODO 中断请求停止位清零
+	if(c=='\n'){
+		while(UCA0STAT & UCBUSY);
+		UCA0TXBUF='\r';
+		}
+	while(UCA0STAT & UCBUSY);
+	
+	UCA0TXBUF=data;                  
 	return UCA0TXBUF;
 }
 
-unsigned int analogRead(){
-	unsigned int result1=0;
- //       ADC12MCTL0 &=!ADC12IFG;
-	result1+=ADC12MEM0;
-	result1=result1<<8;
-
-	ADC12CTL0 = ADC12ON+ADC12SHT0_8+ADC12MSC; // Turn on ADC12, set sampling time
-       	//TODO
-  	ADC12CTL0 |= ADC12ENC;                    // Enable conversions
-  	ADC12CTL0 |= ADC12SC;                     // Start conversion
-  	return result1;
+void UARTSendByte(unsigned char data){
+	while((UCA0IFG & UCTXIFG)==0);
+	UCA0TXBUF=data;
 }
+
+void UARTSendString(unsigned char *str){
+	while(*str !='\0'){
+		UARTSendByte(*str++);
+		delay_ms(2);
+	//	__delay_cycles(1);
+	}
+}
+
+
+#pragma vector=TIMER0_A0_VECTOR
+__interrupt void TimerA0(void){
+	int i;
+	ADC12CTL0 &=~ADC12SC; 
+	ADC12CTL0 |=ADC12SC;
+	Signal=ADC12MEM0;
+//	while(!(UCA0IFG & UCTXIFG));
+//	UCA0RXBUF=Signal;
+	calculate();
+	txBuff[0]='s';
+	txBuff[1]=Signal;
+	txBuff[2]='b';
+	txBuff[3]=BPM;
+//	txBuff[4]='\n';
+	for(i=0;i<4;i++){
+		while(!(UCA0IFG & UCTXIFG));
+		inputchar(txBuff[i]);
+	}
+
+}
+
 
 #pragma vector=ADC12_VECTOR
 __interrupt void timer(void)
 {
+	ADC12IFG &=~BIT0;
+}
+	
+
+
+int calculate(void){
 	int n;
 	unsigned char i;
 	unsigned int runningTotal=0;        //保存前10个心率间期的值，并清0
 	__bic_SR_register(GIE);            //关闭总中断
-	                                   //TODO 重载定时器
-	Signal=analogRead();        //读取心率值
+	
 	sampleCounter+=2;                    //计时总时间
 	n=sampleCounter-lastBeatTime;
 
@@ -261,3 +316,4 @@ __interrupt void timer(void)
 }
 	_EINT();
 }
+
