@@ -149,14 +149,9 @@ void main(void){
 		;
 		}
 
-	}
 		__delay_cycles(138);                  // Delay
 	}
 	
-//	while(1){;}
-//	UCA0TXBUF=UCA0RXBUF;
-
-}
 
 #pragma vector=USCI_A0_VECTOR
 __interrupt void USCI_A0_RX(void){            //UART中断
