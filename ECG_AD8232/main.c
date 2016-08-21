@@ -210,6 +210,7 @@ __interrupt void TimerA0(void){
 	Signal=ADC12MEM0;
 //	while(!(UCA0IFG & UCTXIFG));
 //	UCA0RXBUF=Signal;
+	ECG_ProcessCurrSample(&Signal,&Signal);
 	calculate();
 	txBuff[0]='s';
 	txBuff[1]=Signal;
