@@ -106,7 +106,8 @@ void UART_init(void){                            //UART³õÊ¼»¯
 	UCA0CTL1 |= UCSSEL_1;                     // CLK = ACLK
 	UCA0BR0 = 0x03;                           // 32kHz/9600=3.41 (see User's Guide)
 	UCA0BR1=0x00;
-	UCA0MCTL = UCBRS_3+UCBRF_0;               // Modulation UCBRSx=3, UCBRFx=0
+//	UCA0MCTL = UCBRS_3+UCBRF_0;               // Modulation UCBRSx=3, UCBRFx=0
+	UCA0MCTL =0x0a;
 	UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
 	UCA0IE |= UCRXIE;                         // Enable USCI_A0 RX interrupt
 
@@ -212,12 +213,15 @@ __interrupt void TimerA0(void){
 //	UCA0RXBUF=Signal;
 	ECG_ProcessCurrSample(&Signal,&Signal);
 	calculate();
-	txBuff[0]='s';
-	txBuff[1]=Signal;
-	txBuff[2]='b';
-	txBuff[3]=BPM;
+	txBuff[0]=0xff;
+	txBuff[1]=(unsigned char)(Signal & 0x000000FF);
+	txBuff[2]=(unsigned char)((Signal & 0x0000FF00)>>8);
+	txBuff[3]=0x0d;
+	txBuff[4]=(unsigned char)(BPM & 0x000000FF);
+	txBuff[5]=(unsigned char)((BPM & 0x0000FF00)>>8);
+
 //	txBuff[4]='\n';
-	for(i=0;i<4;i++){
+	for(i=0;i<6;i++){
 		while(!(UCA0IFG & UCTXIFG));
 		inputchar(txBuff[i]);
 	}
